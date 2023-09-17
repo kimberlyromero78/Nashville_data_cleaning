@@ -1,0 +1,247 @@
+/*
+Cleaning Data in SQL Queries
+*/
+
+SELECT *
+FROM Nashville_data_cleaning;
+
+
+
+--------------------------------------------------------------
+
+/*
+Standardize Date Format 
+*/
+
+SELECT SUBSTR(SaleDate, -4) || '-' || CASE
+    WHEN INSTR(SaleDate, 'January') THEN '01'
+    WHEN INSTR(SaleDate, 'February') THEN '02'
+    WHEN INSTR(SaleDate, 'March') THEN '03'
+    WHEN INSTR(SaleDate, 'April') THEN '04'
+    WHEN INSTR(SaleDate, 'May') THEN '05'
+    WHEN INSTR(SaleDate, 'June') THEN '06'
+    WHEN INSTR(SaleDate, 'July') THEN '07'
+    WHEN INSTR(SaleDate, 'August') THEN '08'
+    WHEN INSTR(SaleDate, 'September') THEN '09'
+    WHEN INSTR(SaleDate, 'October') THEN '10'
+    WHEN INSTR(SaleDate, 'November') THEN '11'
+    WHEN INSTR(SaleDate, 'December') THEN '12'
+    ELSE NULL
+    END || '-' ||
+    SUBSTR(SaleDate, INSTR(SaleDate, ' ') + 1, INSTR(SaleDate, ',') - INSTR(SaleDate, ' ') - 1) AS FormattedSaleDate
+FROM Nashville_data_cleaning;
+
+
+UPDATE Nashville_data_cleaning
+SET SaleDate = (
+    SELECT SUBSTR(SaleDate, -4) || '-' || CASE
+    WHEN INSTR(SaleDate, 'January') THEN '01'
+    WHEN INSTR(SaleDate, 'February') THEN '02'
+    WHEN INSTR(SaleDate, 'March') THEN '03'
+    WHEN INSTR(SaleDate, 'April') THEN '04'
+    WHEN INSTR(SaleDate, 'May') THEN '05'
+    WHEN INSTR(SaleDate, 'June') THEN '06'
+    WHEN INSTR(SaleDate, 'July') THEN '07'
+    WHEN INSTR(SaleDate, 'August') THEN '08'
+    WHEN INSTR(SaleDate, 'September') THEN '09'
+    WHEN INSTR(SaleDate, 'October') THEN '10'
+    WHEN INSTR(SaleDate, 'November') THEN '11'
+    WHEN INSTR(SaleDate, 'December') THEN '12'
+    ELSE NULL
+    END || '-' ||
+    SUBSTR(SaleDate, INSTR(SaleDate, ' ') + 1, INSTR(SaleDate, ',') - INSTR(SaleDate, ' ') - 1) AS FormattedSaleDate
+FROM Nashville_data_cleaning
+);
+
+
+--------------------------------------------------------------
+
+/*
+Populate Property Address date
+*/
+
+SELECT *
+    FROM Nashville_data_cleaning
+    WHERE PropertyAddress is null;
+    
+SELECT *
+    FROM Nashville_data_cleaning
+    ORDER BY ParcelID;
+
+SELECT a.ParcelID, a.PropertyAddress, b.ParcelID, b.PropertyAddress, COALESCE(a.PropertyAddress,b.PropertyAddress) AS MergedPropertyAddress
+    FROM Nashville_data_cleaning a
+    JOIN Nashville_data_cleaning b
+        on a.ParcelID = b.ParcelID
+        AND a.[UniqueID] <> b.[UniqueID] 
+    Where a.PropertyAddress is null;
+    
+UPDATE Nashville_data_cleaning
+    SET PropertyAddress = COALESCE(a.PropertyAddress,b.PropertyAddress) 
+        FROM Nashville_data_cleaning a
+        JOIN Nashville_data_cleaning b
+            on a.ParcelID = b.ParcelID
+            AND a.[UniqueID] <> b.[UniqueID] 
+        Where a.PropertyAddress is null;
+        
+
+--------------------------------------------------------------
+
+/*
+Breaking out Address into Individual Columns (Address, City, State)
+*/
+
+
+SELECT *
+    FROM Nashville_data_cleaning;
+    ---WHERE PropertyAddress is null;
+    ---ORDER BY ParcelID;
+    
+
+SELECT 
+    TRIM(SUBSTR(PropertyAddress, 1, INSTR(PropertyAddress, ',') - 1)) AS Address1,
+    TRIM(SUBSTR(PropertyAddress, INSTR(PropertyAddress, ',') + 1)) AS Address2
+    FROM Nashville_data_cleaning;
+
+ALTER TABLE Nashville_data_cleaning
+    Add PropertySplitAddress Nvarchar(255);
+
+Update Nashville_data_cleaning
+    SET PropertySplitAddress = TRIM(SUBSTR(PropertyAddress, 1, INSTR(PropertyAddress, ',') - 1));
+
+
+ALTER TABLE Nashville_data_cleaning
+    Add PropertySplitCity Nvarchar(255);
+
+Update Nashville_data_cleaning
+    SET PropertySplitCity = TRIM(SUBSTR(PropertyAddress, INSTR(PropertyAddress, ',') + 1));
+
+
+
+
+/* Break down the OwnerAddress column */
+
+SELECT OwnerAddress
+    FROM Nashville_data_cleaning;
+    
+
+SELECT
+    SUBSTR(OwnerAddress, 1, INSTR(OwnerAddress, ', ') - 1) AS Address,
+    ---This uses the SUBSTR function to extract a substring from the beginning of the OwnerAddress column to the position just before the first comma and space (', ')---
+    SUBSTR(OwnerAddress, INSTR(OwnerAddress, ', ') + 2, INSTR(SUBSTR(OwnerAddress, INSTR(OwnerAddress, ', ') + 2), ', ') - 1) AS City,
+    ---This is more complex. It first finds the position of the first comma and space (', ') in the OwnerAddress, then it extracts a substring starting from two positions after that comma and space.--- 
+    ---Next, it finds the position of the second comma and space within the substring (the City part), and it subtracts 1 to get the correct length.---
+    SUBSTR(OwnerAddress, LENGTH(OwnerAddress) - 1) AS State
+    ---It extracts a substring starting from the second-to-last character of the OwnerAddress---
+    FROM Nashville_data_cleaning;
+
+ALTER TABLE Nashville_data_cleaning
+    Add OwnerSplitAddress Nvarchar(255);
+
+Update Nashville_data_cleaning
+    SET OwnerSplitAddress = SUBSTR(OwnerAddress, 1, INSTR(OwnerAddress, ', ') - 1);
+
+ALTER TABLE Nashville_data_cleaning
+    Add OwnerSplitCity Nvarchar(255);
+
+Update Nashville_data_cleaning
+    SET OwnerSplitCity = SUBSTR(OwnerAddress, INSTR(OwnerAddress, ', ') + 2, INSTR(SUBSTR(OwnerAddress, INSTR(OwnerAddress, ', ') + 2), ', ') - 1);
+
+ALTER TABLE Nashville_data_cleaning
+    Add OwnerSplitState Nvarchar(255);
+
+Update Nashville_data_cleaning
+    SET OwnerSplitState = SUBSTR(OwnerAddress, LENGTH(OwnerAddress) - 1);
+    
+
+--------------------------------------------------------------
+
+/*
+Change Y and N to Yes and No in "Sold as Vacant" field
+*/
+
+SELECT DISTINCT (SoldAsVacant), COUNT(SoldAsVacant)
+    FROM Nashville_data_cleaning 
+    GROUP BY SoldAsVacant
+    ORDER BY 2;
+
+SELECT SoldAsVacant,
+    CASE 
+    WHEN SoldAsVacant = 'Y' THEN 'Yes'
+    WHEN SoldAsVacant = 'N' THEN 'No'
+    ELSE SoldAsVacant
+    END
+    FROM Nashville_data_cleaning;
+    
+UPDATE Nashville_data_cleaning 
+    SET SoldAsVacant = CASE 
+    WHEN SoldAsVacant = 'Y' THEN 'Yes'
+    WHEN SoldAsVacant = 'N' THEN 'No'
+    ELSE SoldAsVacant
+    END;
+
+--------------------------------------------------------------
+
+/*
+Remove Duplicates
+*/
+
+WITH RowNumCTE AS (
+Select *,
+	ROW_NUMBER() OVER (
+	PARTITION BY ParcelID,
+	PropertyAddress,
+	SalePrice,
+	SaleDate,
+	LegalReference
+	ORDER BY
+	UniqueID
+	) row_num
+
+From Nashville_data_cleaning
+--order by ParcelID
+)
+Select *
+From RowNumCTE
+Where row_num > 1
+--Order by PropertyAddress;
+;
+
+
+DELETE FROM Nashville_data_cleaning
+WHERE UniqueID IN (
+    SELECT UniqueID
+    FROM (
+        SELECT UniqueID,
+               ROW_NUMBER() OVER (
+                   PARTITION BY ParcelID, PropertyAddress, SalePrice, SaleDate, LegalReference
+                   ORDER BY UniqueID
+               ) AS row_num
+        FROM Nashville_data_cleaning
+    ) AS RowNumCTE
+    WHERE row_num > 1
+);
+
+
+--------------------------------------------------------------
+
+/*
+Delete Unused Columns
+*/
+
+
+SELECT *
+FROM Nashville_data_cleaning;
+
+
+
+ALTER TABLE Nashville_data_cleaning
+DROP COLUMN OwnerAddress;
+
+ALTER TABLE Nashville_data_cleaning
+DROP COLUMN TaxDistrict;
+
+ALTER TABLE Nashville_data_cleaning
+DROP COLUMN PropertyAddress; 
+
+ALTER TABLE Nashville_data_cleaning
+DROP COLUMN UniqueID1; 
